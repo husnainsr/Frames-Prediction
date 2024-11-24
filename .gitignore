@@ -1,0 +1,10 @@
+dataset
+dataset/
+venv/
+data
+data/
+eda
+eda/
+*.ipynb
+*.pyc
+*.pyc
