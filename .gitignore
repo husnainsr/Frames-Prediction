@@ -9,3 +9,4 @@ eda/
 *.pyc
 *.pyc
 Sample/
+processed_data/

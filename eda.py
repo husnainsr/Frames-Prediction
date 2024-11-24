@@ -8,6 +8,10 @@ import numpy as np
 import shutil
 from scipy import stats
 
+# Create eda directory if it doesn't exist
+eda_dir = './eda'
+os.makedirs(eda_dir, exist_ok=True)
+
 print("=== Part 1: Data Extraction ===")
 
 train_df = pd.read_csv('./dataset/train.csv')
@@ -218,30 +222,22 @@ plt.tight_layout()
 plt.savefig(os.path.join('./eda', 'correlation_matrix.png'))
 plt.close()
 
+# 4. Statistical Tests
+
+# Test for normal distribution of durations
 print("\nNormality Test for Video Durations:")
 for category in video_props_df['category'].unique():
     stat, p_value = stats.normaltest(video_props_df[video_props_df['category'] == category]['duration'])
     print(f"{category}: p-value = {p_value:.4f}")
 
+# ANOVA test for duration differences between categories
 f_stat, p_value = stats.f_oneway(*[group['duration'].values for name, group in video_props_df.groupby('category')])
 print(f"\nANOVA test for duration differences between categories:")
 print(f"F-statistic: {f_stat:.4f}")
 print(f"p-value: {p_value:.4f}")
 
-with open(os.path.join('./eda', 'eda_summary.txt'), 'w') as f:
-    f.write("=== Sample Dataset EDA Summary ===\n\n")
-    f.write(f"Total number of videos: {len(all_data)}\n\n")
-    f.write("Distribution across splits:\n")
-    f.write(str(all_data['split'].value_counts()) + "\n\n")
-    f.write("Distribution across categories:\n")
-    f.write(str(all_data['label'].value_counts()) + "\n\n")
-    f.write("Video Properties Summary:\n")
-    f.write("\nDuration (seconds):\n")
-    f.write(str(video_props_df['duration'].describe()) + "\n")
-    f.write("\nFrame Count:\n")
-    f.write(str(video_props_df['frame_count'].describe()) + "\n")
-    f.write("\nResolutions:\n")
-    f.write(str(resolutions))
+# Update the summary file with new analyses
+with open(os.path.join('./eda', 'eda_summary.txt'), 'a') as f:
     f.write("\n\n=== Additional Analyses ===\n")
     f.write("\nTemporal Statistics by Category:\n")
     f.write(str(temporal_stats))
