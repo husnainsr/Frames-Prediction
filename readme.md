@@ -19,15 +19,35 @@ Note: You need to have kaggle api key to download the dataset. You can get it fr
 python data_downloader.py
 ```
 
+Run the data_selector.py file to select the categories that have consistent formats.
+
+```bash
+python data_selector.py
+```
+
+
 Run the eda.py file to get the summary of the dataset.
 
 ```bash
 python eda.py
 ```
 
+### Categories
 
+The following exercise categories are included in this dataset:
 
+- PushUps
+- JumpingJack
+- Lunges  
+- BodyWeightSquats
+- PullUps
+
+Run the preprocessing.py file to preprocess the dataset.
+```bash
+python preprocessing.py
+```
 
 ## Collaborators
-- Muhammad Husnain Sattar
-- Muhammad Isma
+- Husnain Sattar
+- Isma
+- Laiba Batool

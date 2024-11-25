@@ -5,72 +5,16 @@ import os
 import cv2
 from pathlib import Path
 import numpy as np
-import shutil
 from scipy import stats
+from tqdm import tqdm
 
 # Create eda directory if it doesn't exist
 eda_dir = './eda'
 os.makedirs(eda_dir, exist_ok=True)
 
-print("=== Part 1: Data Extraction ===")
+print("=== Video Properties Analysis ===")
 
-train_df = pd.read_csv('./dataset/train.csv')
-test_df = pd.read_csv('./dataset/test.csv')
-val_df = pd.read_csv('./dataset/val.csv')
-
-all_labels_counts = pd.concat([train_df['label'], test_df['label'], val_df['label']]).value_counts()
-print("\nLabel distribution (in descending order):")
-pd.set_option('display.max_rows', None)
-print(all_labels_counts)
-
-sample_categories = ['Basketball', 'CricketShot', 'TennisSwing', 'PlayingDhol', 'PlayingCello']
-
-sample_dir = './Sample'
-sample_train_dir = os.path.join(sample_dir, 'train')
-sample_test_dir = os.path.join(sample_dir, 'test')
-sample_val_dir = os.path.join(sample_dir, 'val')
-
-for dir_path in [sample_dir, sample_train_dir, sample_test_dir, sample_val_dir]:
-    os.makedirs(dir_path, exist_ok=True)
-
-def copy_category_videos(df, category, source_dir, dest_dir):
-    category_videos = df[df['label'] == category]['clip_name'].tolist()
-    category_dir = os.path.join(dest_dir, category)
-    os.makedirs(category_dir, exist_ok=True)
-    
-    print(f"\nProcessing {category} videos:")
-    print(f"Source directory: {source_dir}")
-    print(f"Destination directory: {category_dir}")
-    print(f"Number of videos to copy: {len(category_videos)}")
-    
-    for video in category_videos:
-        source_path = os.path.join(source_dir, category, video + '.avi')
-        dest_path = os.path.join(category_dir, video + '.avi')
-        print(f"Attempting to copy: {source_path}")
-        if os.path.exists(source_path):
-            shutil.copy2(source_path, dest_path)
-            print(f"Successfully copied: {video}.avi")
-        else:
-            print(f"File not found: {source_path}")
-
-for category in sample_categories:
-    print(f"\nProcessing category: {category}")
-    copy_category_videos(train_df, category, './dataset/train', sample_train_dir)
-    copy_category_videos(test_df, category, './dataset/test', sample_test_dir)
-    copy_category_videos(val_df, category, './dataset/val', sample_val_dir)
-
-sample_train = train_df[train_df['label'].isin(sample_categories)]
-sample_test = test_df[test_df['label'].isin(sample_categories)]
-sample_val = val_df[val_df['label'].isin(sample_categories)]
-
-sample_train.to_csv(os.path.join(sample_dir, 'train.csv'), index=False)
-sample_test.to_csv(os.path.join(sample_dir, 'test.csv'), index=False)
-sample_val.to_csv(os.path.join(sample_dir, 'val.csv'), index=False)
-
-print("\nSample dataset created successfully!")
-
-print("\n=== Part 2: Exploratory Data Analysis ===")
-
+# Load existing sample datasets
 sample_train = pd.read_csv('./Sample/train.csv')
 sample_test = pd.read_csv('./Sample/test.csv')
 sample_val = pd.read_csv('./Sample/val.csv')
@@ -85,180 +29,107 @@ print("\nDataset Overview:")
 print(f"Total number of videos: {len(all_data)}")
 print("\nDistribution across splits:")
 print(all_data['split'].value_counts())
-
-plt.figure(figsize=(12, 6))
-sns.countplot(data=all_data, x='label', hue='split')
-plt.xticks(rotation=45)
-plt.title('Distribution of Videos Across Categories and Splits')
-plt.tight_layout()
-plt.savefig(os.path.join('./eda', 'category_distribution.png'))
-plt.close()
+print("\nDistribution across categories:")
+print(all_data['label'].value_counts())
 
 def get_video_properties(video_path):
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
+    try:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            print(f"Could not open video: {video_path}")
+            return None
+        
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        
+        if frame_count <= 0 or fps <= 0:
+            print(f"Invalid frame count or FPS for {video_path}")
+            return None
+            
+        properties = {
+            'frame_count': frame_count,
+            'fps': fps,
+            'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            'duration': frame_count / fps if fps > 0 else 0
+        }
+        return properties
+    except Exception as e:
+        print(f"Error processing {video_path}: {str(e)}")
         return None
-    
-    properties = {
-        'frame_count': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-        'fps': cap.get(cv2.CAP_PROP_FPS),
-        'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-        'duration': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / cap.get(cv2.CAP_PROP_FPS)
-    }
-    cap.release()
-    return properties
+    finally:
+        if 'cap' in locals():
+            cap.release()
 
-print("\n=== Video Properties Analysis ===")
+# Analyze video properties with progress bar
+print("\nAnalyzing video properties...")
 video_properties = []
 for split in ['train', 'test', 'val']:
     base_path = Path(f'./Sample/{split}')
     for category in all_data['label'].unique():
         category_path = base_path / category
         if category_path.exists():
-            for video_file in list(category_path.glob('*.avi'))[:3]:  # Analyze first 3 videos of each category
-                props = get_video_properties(video_file)
+            video_files = list(category_path.glob('*.avi'))
+            for video_file in tqdm(video_files, desc=f"{split}/{category}"):
+                props = get_video_properties(str(video_file))
                 if props:
                     props['category'] = category
                     props['split'] = split
+                    props['filename'] = video_file.name
                     video_properties.append(props)
+
+if not video_properties:
+    print("No video properties could be extracted!")
+    exit(1)
 
 video_props_df = pd.DataFrame(video_properties)
 
+# Generate visualizations and statistics
 print("\nVideo Properties Summary:")
-print("\nDuration (seconds):")
-print(video_props_df['duration'].describe())
-print("\nFrame Count:")
-print(video_props_df['frame_count'].describe())
-print("\nResolutions:")
-resolutions = video_props_df.apply(lambda x: f"{int(x['width'])}x{int(x['height'])}", axis=1).value_counts()
-print(resolutions)
+if 'duration' in video_props_df.columns:
+    print("\nDuration (seconds):")
+    print(video_props_df['duration'].describe())
+if 'frame_count' in video_props_df.columns:
+    print("\nFrame Count:")
+    print(video_props_df['frame_count'].describe())
+if 'width' in video_props_df.columns and 'height' in video_props_df.columns:
+    print("\nResolutions:")
+    resolutions = video_props_df.apply(lambda x: f"{int(x['width'])}x{int(x['height'])}", axis=1).value_counts()
+    print(resolutions)
 
-plt.figure(figsize=(15, 5))
-
-plt.subplot(131)
-sns.boxplot(data=video_props_df, x='category', y='duration')
-plt.xticks(rotation=45)
-plt.title('Video Duration Distribution by Category')
-
-plt.subplot(132)
-sns.boxplot(data=video_props_df, x='category', y='frame_count')
-plt.xticks(rotation=45)
-plt.title('Frame Count Distribution by Category')
-
-plt.subplot(133)
-sns.boxplot(data=video_props_df, x='category', y='fps')
-plt.xticks(rotation=45)
-plt.title('FPS Distribution by Category')
-
-plt.tight_layout()
-plt.savefig(os.path.join('./eda', 'video_properties.png'))
-plt.close()
-
-print("\n=== Additional EDA Analysis ===")
-
-# 1. Temporal Analysis
-plt.figure(figsize=(15, 5))
-temporal_stats = video_props_df.groupby('category')[['duration', 'frame_count', 'fps']].agg(['mean', 'std'])
-print("\nTemporal Statistics by Category:")
-print(temporal_stats)
-
-# Visualize temporal patterns
-plt.subplot(131)
-temporal_stats['duration']['mean'].plot(kind='bar')
-plt.title('Average Duration by Category')
-plt.xticks(rotation=45)
-plt.ylabel('Seconds')
-
-plt.subplot(132)
-temporal_stats['frame_count']['mean'].plot(kind='bar')
-plt.title('Average Frame Count by Category')
-plt.xticks(rotation=45)
-
-plt.subplot(133)
-temporal_stats['fps']['mean'].plot(kind='bar')
-plt.title('Average FPS by Category')
-plt.xticks(rotation=45)
-
-plt.tight_layout()
-plt.savefig(os.path.join('./eda', 'temporal_analysis.png'))
-plt.close()
-
-# 2. Resolution Analysis
-video_props_df['aspect_ratio'] = video_props_df['width'] / video_props_df['height']
-video_props_df['resolution'] = video_props_df['width'] * video_props_df['height']
-
-plt.figure(figsize=(15, 5))
-
-plt.subplot(131)
-sns.boxplot(data=video_props_df, x='category', y='aspect_ratio')
-plt.title('Aspect Ratio Distribution')
-plt.xticks(rotation=45)
-
-plt.subplot(132)
-sns.boxplot(data=video_props_df, x='category', y='resolution')
-plt.title('Resolution Distribution')
-plt.xticks(rotation=45)
-
-plt.subplot(133)
-resolution_counts = video_props_df.groupby(['width', 'height']).size().reset_index(name='count')
-plt.scatter(resolution_counts['width'], resolution_counts['height'], s=resolution_counts['count']*100)
-plt.title('Common Resolutions')
-plt.xlabel('Width')
-plt.ylabel('Height')
-
-plt.tight_layout()
-plt.savefig(os.path.join('./eda', 'resolution_analysis.png'))
-plt.close()
-
-# 3. Correlation Analysis
-correlation_features = ['duration', 'frame_count', 'fps', 'width', 'height', 'aspect_ratio', 'resolution']
-correlation_matrix = video_props_df[correlation_features].corr()
-
-plt.figure(figsize=(10, 8))
-sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
-plt.title('Correlation Matrix of Video Properties')
-plt.tight_layout()
-plt.savefig(os.path.join('./eda', 'correlation_matrix.png'))
-plt.close()
-
-# 4. Statistical Tests
-
-# Test for normal distribution of durations
-print("\nNormality Test for Video Durations:")
-for category in video_props_df['category'].unique():
-    stat, p_value = stats.normaltest(video_props_df[video_props_df['category'] == category]['duration'])
-    print(f"{category}: p-value = {p_value:.4f}")
-
-# ANOVA test for duration differences between categories
-f_stat, p_value = stats.f_oneway(*[group['duration'].values for name, group in video_props_df.groupby('category')])
-print(f"\nANOVA test for duration differences between categories:")
-print(f"F-statistic: {f_stat:.4f}")
-print(f"p-value: {p_value:.4f}")
-
-# Update the summary file with new analyses
-with open(os.path.join('./eda', 'eda_summary.txt'), 'a') as f:
-    f.write("\n\n=== Additional Analyses ===\n")
-    f.write("\nTemporal Statistics by Category:\n")
-    f.write(str(temporal_stats))
-    f.write("\n\nResolution Statistics:\n")
-    f.write("Aspect Ratio Summary:\n")
-    f.write(str(video_props_df['aspect_ratio'].describe()))
-    f.write("\n\nTotal Resolution Summary:\n")
-    f.write(str(video_props_df['resolution'].describe()))
-    f.write("\n\nNormality Test Results:\n")
+# Save detailed analysis to file
+with open(os.path.join(eda_dir, 'video_analysis.txt'), 'w') as f:
+    f.write("=== Video Analysis Report ===\n\n")
+    
+    f.write("Category Statistics:\n")
     for category in video_props_df['category'].unique():
-        stat, p_value = stats.normaltest(video_props_df[video_props_df['category'] == category]['duration'])
-        f.write(f"{category}: p-value = {p_value:.4f}\n")
-    f.write(f"\nANOVA test results:\n")
-    f.write(f"F-statistic: {f_stat:.4f}\n")
-    f.write(f"p-value: {p_value:.4f}\n")
+        cat_data = video_props_df[video_props_df['category'] == category]
+        f.write(f"\n{category}:\n")
+        f.write(f"Number of videos: {len(cat_data)}\n")
+        if 'duration' in cat_data.columns:
+            f.write(f"Average duration: {cat_data['duration'].mean():.2f} seconds\n")
+        if 'frame_count' in cat_data.columns:
+            f.write(f"Average frame count: {cat_data['frame_count'].mean():.2f}\n")
+        if 'width' in cat_data.columns and 'height' in cat_data.columns:
+            f.write(f"Common resolutions: {cat_data.apply(lambda x: f'{int(x.width)}x{int(x.height)}', axis=1).value_counts().to_dict()}\n")
 
-print("\n=== EDA Complete ===")
-print("Generated files in 'eda' directory:")
-print("1. category_distribution.png - Shows distribution of videos across categories")
-print("2. video_properties.png - Shows video duration, frame count, and FPS distributions")
-print("3. temporal_analysis.png - Shows temporal patterns across categories")
-print("4. resolution_analysis.png - Shows resolution patterns and distributions")
-print("5. correlation_matrix.png - Shows correlations between video properties")
-print("6. eda_summary.txt - Contains detailed statistics and test results")
+# Generate visualizations
+plt.figure(figsize=(15, 10))
+
+if 'duration' in video_props_df.columns:
+    plt.subplot(2, 2, 1)
+    sns.boxplot(data=video_props_df, x='category', y='duration')
+    plt.xticks(rotation=45)
+    plt.title('Video Durations by Category')
+
+if 'frame_count' in video_props_df.columns:
+    plt.subplot(2, 2, 2)
+    sns.boxplot(data=video_props_df, x='category', y='frame_count')
+    plt.xticks(rotation=45)
+    plt.title('Frame Counts by Category')
+
+plt.tight_layout()
+plt.savefig(os.path.join(eda_dir, 'video_properties.png'))
+plt.close()
+
+print("\nAnalysis complete! Check the 'eda' directory for detailed results.")
