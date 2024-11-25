@@ -47,6 +47,16 @@ Run the preprocessing.py file to preprocess the dataset.
 python preprocessing.py
 ```
 
+USED **H5** format for storing the data.
+### Reason for using H5 format
+- Have multiple arrays to store
+- Need partial loading capability
+- Work with very large datasets
+- Need to store metadata
+- Want compression
+- Need to modify data without loading entire file
+
+
 ## Collaborators
 - Husnain Sattar
 - Isma
