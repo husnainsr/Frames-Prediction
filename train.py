@@ -5,13 +5,16 @@ from torch.utils.data import DataLoader
 def main():
     # Training configuration
     config = {
-        'batch_size': 16,
-        'learning_rate': 0.001,
-        'epochs': 20,
-        'log_interval': 10,
+        'batch_size': 12,
+        'learning_rate': 0.0001,
+        'epochs': 50,
+        'scheduler': 'cosine',
+        'warmup_epochs': 5,
+        'log_interval': 50,
         'input_frames': 10,
         'output_frames': 5,
-        'checkpoint_interval': 5  # Save checkpoint every 5 epochs
+        'checkpoint_interval': 5,
+        'augmentation': False
     }
     
     # Create datasets
@@ -36,7 +39,7 @@ def main():
     # Initialize model
     model = ConvLSTMPredictor(
         input_channels=1,
-        hidden_channels=32,
+        hidden_channels=128,
         kernel_size=3
     )
     

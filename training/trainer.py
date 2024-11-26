@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import mean_squared_error
 from skimage.metrics import structural_similarity as ssim
 import torchmetrics
+import pandas as pd
 
 
 class VideoDataset(torch.utils.data.Dataset):
@@ -49,6 +50,48 @@ class VideoDataset(torch.utils.data.Dataset):
                     current_idx -= num_sequences
 
 
+class CombinedLoss(nn.Module):
+    def __init__(self, mse_weight=1.0, gdl_weight=1.0, perceptual_weight=0.1):
+        super(CombinedLoss, self).__init__()
+        self.mse_weight = mse_weight
+        self.gdl_weight = gdl_weight
+        self.perceptual_weight = perceptual_weight
+        
+        self.mse_criterion = nn.MSELoss()
+        
+    def gradient_difference_loss(self, pred, target):
+        # Compute gradients
+        pred_dx = pred[:, :, :, 1:] - pred[:, :, :, :-1]
+        pred_dy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
+        target_dx = target[:, :, :, 1:] - target[:, :, :, :-1]
+        target_dy = target[:, :, 1:, :] - target[:, :, :-1, :]
+        
+        # Compute GDL
+        dx_loss = torch.mean(torch.abs(pred_dx - target_dx))
+        dy_loss = torch.mean(torch.abs(pred_dy - target_dy))
+        
+        return dx_loss + dy_loss
+    
+    def forward(self, pred, target):
+        # Reshape if needed
+        if pred.dim() == 5:  # [batch, seq_len, channel, height, width]
+            b, t, c, h, w = pred.size()
+            pred = pred.view(b * t, c, h, w)
+            target = target.view(b * t, c, h, w)
+        
+        # MSE Loss
+        mse_loss = self.mse_criterion(pred, target)
+        
+        # Gradient Difference Loss
+        gdl_loss = self.gradient_difference_loss(pred, target)
+        
+        # Combined loss
+        total_loss = (
+            self.mse_weight * mse_loss + 
+            self.gdl_weight * gdl_loss
+        )
+        
+        return total_loss
 
 
 class ModelTrainer:
@@ -72,8 +115,12 @@ class ModelTrainer:
             lr=config['learning_rate']
         )
         
-        # Loss function
-        self.criterion = nn.MSELoss()
+        # Initialize the combined loss function
+        self.criterion = CombinedLoss(
+            mse_weight=1.0,
+            gdl_weight=1.0,
+            perceptual_weight=0.1
+        ).to(self.device)
         
         # Tensorboard writer
         self.writer = SummaryWriter(f"logs/{model.name}_{time.strftime('%Y%m%d_%H%M%S')}")
@@ -87,6 +134,21 @@ class ModelTrainer:
             },
             {'dummy_metric': 0}  # Required by tensorboard
         )
+        
+        # Initialize metrics tracking
+        self.metrics_history = {
+            'epoch': [],
+            'train_loss': [],
+            'val_loss': [],
+            'mse': [],
+            'ssim': [],
+            'epoch_time': []
+        }
+        
+        # Create metrics directory
+        self.metrics_dir = Path("metrics")
+        self.metrics_dir.mkdir(exist_ok=True)
+        self.metrics_file = self.metrics_dir / f"{model.name}_metrics_{time.strftime('%Y%m%d_%H%M%S')}.csv"
 
     def setup_logging(self):
         log_dir = Path("logs")
@@ -207,6 +269,12 @@ class ModelTrainer:
         
         return metrics
 
+    def save_metrics(self):
+        """Save metrics to CSV file"""
+        df = pd.DataFrame(self.metrics_history)
+        df.to_csv(self.metrics_file, index=False)
+        self.logger.info(f'Saved metrics to {self.metrics_file}')
+
     def train(self, train_loader: DataLoader, val_loader: DataLoader):
         best_val_loss = float('inf')
         
@@ -217,6 +285,17 @@ class ModelTrainer:
             val_metrics = self.validate(val_loader, epoch)
             
             epoch_time = time.time() - epoch_start_time
+            
+            # Store metrics
+            self.metrics_history['epoch'].append(epoch)
+            self.metrics_history['train_loss'].append(train_loss)
+            self.metrics_history['val_loss'].append(val_metrics['val_loss'])
+            self.metrics_history['mse'].append(val_metrics['mse'])
+            self.metrics_history['ssim'].append(val_metrics['ssim'])
+            self.metrics_history['epoch_time'].append(epoch_time)
+            
+            # Save metrics after each epoch
+            self.save_metrics()
             
             # Log metrics
             self.logger.info(f'Epoch {epoch}:')
@@ -231,10 +310,15 @@ class ModelTrainer:
                 best_val_loss = val_metrics['val_loss']
                 model_save_path = Path(f"models/{self.model.name}_best.pth")
                 model_save_path.parent.mkdir(exist_ok=True)
+                
+                # Save model with metrics
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': self.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
                     'val_loss': best_val_loss,
+                    'metrics_history': self.metrics_history,  # Save metrics history with model
+                    'config': self.config  # Save configuration with model
                 }, model_save_path)
+                
                 self.logger.info(f'Saved best model to {model_save_path}')

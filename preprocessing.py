@@ -131,7 +131,7 @@ class VideoPreprocessor:
                     video_group.create_dataset('outputs', data=output_seq)
 
 def main():
-    # Initialize preprocessor
+    # Initialize preprocessor with new frame counts
     preprocessor = VideoPreprocessor(
         input_size=(64, 64),
         input_frames=10,
