@@ -100,14 +100,14 @@ sample_val_dir = os.path.join(sample_dir, 'val')
 for dir_path in [sample_dir, sample_train_dir, sample_test_dir, sample_val_dir]:
     os.makedirs(dir_path, exist_ok=True)
 
-def copy_category_videos(df, category, source_dir, dest_dir, max_videos=20):
+def copy_category_videos(df, category, source_dir, dest_dir, max_videos=None):
     category_videos = df[df['label'] == category]['clip_name'].tolist()
     category_dir = os.path.join(dest_dir, category)
     os.makedirs(category_dir, exist_ok=True)
     
     copied_count = 0
     for video in category_videos:
-        if copied_count >= max_videos:
+        if max_videos and copied_count >= max_videos:
             break
             
         source_path = os.path.join(source_dir, category, video + '.avi')
@@ -124,9 +124,9 @@ def copy_category_videos(df, category, source_dir, dest_dir, max_videos=20):
 # Copy validated videos
 for category in sample_categories:
     print(f"\nProcessing category: {category}")
-    copy_category_videos(train_df, category, './dataset/train', sample_train_dir, max_videos=30)
-    copy_category_videos(test_df, category, './dataset/test', sample_test_dir, max_videos=10)
-    copy_category_videos(val_df, category, './dataset/val', sample_val_dir, max_videos=10)
+    copy_category_videos(train_df, category, './dataset/train', sample_train_dir)
+    copy_category_videos(test_df, category, './dataset/test', sample_test_dir)
+    copy_category_videos(val_df, category, './dataset/val', sample_val_dir)
 
 # Save filtered CSV files
 sample_train = train_df[train_df['label'].isin(sample_categories)]

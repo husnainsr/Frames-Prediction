@@ -69,13 +69,13 @@ class VideoPreprocessor:
 
     def create_sequences(self, frames: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Create input-output sequences from frames.
+        Create non-overlapping input-output sequences from frames.
         
         Returns:
             Tuple of (input_sequences, output_sequences)
         """
         total_frames = len(frames)
-        sequence_length = self.input_frames + self.output_frames
+        sequence_length = self.input_frames + self.output_frames  # 15 frames total (10 + 5)
         
         if total_frames < sequence_length:
             return None, None
@@ -83,12 +83,18 @@ class VideoPreprocessor:
         input_sequences = []
         output_sequences = []
         
-        for i in range(total_frames - sequence_length + 1):
-            input_seq = frames[i:i + self.input_frames]
-            output_seq = frames[i + self.input_frames:i + sequence_length]
+        # Create non-overlapping sequences by stepping by sequence_length
+        for i in range(0, total_frames - sequence_length + 1, sequence_length):
+            input_seq = frames[i:i + self.input_frames]  # Take 10 frames
+            output_seq = frames[i + self.input_frames:i + sequence_length]  # Take next 5 frames
             
-            input_sequences.append(input_seq)
-            output_sequences.append(output_seq)
+            # Ensure we have complete sequences
+            if len(input_seq) == self.input_frames and len(output_seq) == self.output_frames:
+                input_sequences.append(input_seq)
+                output_sequences.append(output_seq)
+            
+        if not input_sequences:  # If no sequences were created
+            return None, None
             
         return np.array(input_sequences), np.array(output_sequences)
 
@@ -111,6 +117,7 @@ class VideoPreprocessor:
         with h5py.File(save_path, 'w') as h5f:
             for category in categories:
                 print(f"\nProcessing {category.name} videos...")
+                # Remove the video count limitation - process all .avi files
                 video_files = list(category.glob('*.avi'))
                 
                 # Create category group in H5 file
