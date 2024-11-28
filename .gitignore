@@ -15,3 +15,4 @@ logs/
 models/*.pth
 models/*.pth.tar
 models/*.tar
+generate_req.py

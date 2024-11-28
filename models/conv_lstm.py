@@ -1,4 +1,3 @@
-from .base_model import BaseModel
 import torch
 import torch.nn as nn
 
@@ -34,11 +33,11 @@ class ConvLSTMCell(nn.Module):
         o = torch.sigmoid(o)
         
         c_next = f * c_prev + i * g
-        h_next = o * torch.tanh(c_next)
+        h_next = o * torch.tanh(c_next) + x
         
         return h_next, c_next
 
-class ConvLSTMPredictor(BaseModel):
+class ConvLSTMPredictor(nn.Module):
     def __init__(self, input_channels=1, hidden_channels=128, kernel_size=3):
         super(ConvLSTMPredictor, self).__init__()
         
@@ -78,7 +77,6 @@ class ConvLSTMPredictor(BaseModel):
             nn.LeakyReLU(0.2)
         )
         
-        # Add decoder_conv2 layer
         self.decoder_conv2 = nn.Sequential(
             nn.ConvTranspose2d(64 + 32, 32, kernel_size=4, stride=2, padding=1),  # +32 for skip connection
             nn.BatchNorm2d(32),
