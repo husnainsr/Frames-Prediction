@@ -52,54 +52,17 @@ class VideoDataset(Dataset):
                     
                     current_idx -= num_sequences
 
-class CombinedLoss(nn.Module):
-    def __init__(self, ssim_weight=1.0, gdl_weight=1.0, perceptual_weight=0.1):
-        super(CombinedLoss, self).__init__()
-        self.ssim_weight = ssim_weight
-        self.gdl_weight = gdl_weight
-        self.perceptual_weight = perceptual_weight
+class SSIMLoss(nn.Module):
+    def __init__(self, window_size=11):
+        super(SSIMLoss, self).__init__()
+        self.window_size = window_size
         
-    def ssim_loss(self, pred, target, window_size=11):
-        def gaussian_window(size, sigma=1.5):
-            coords = torch.arange(size, dtype=torch.float32)
-            coords -= size // 2
-            g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
-            g = g / g.sum()
-            return g.view(1, 1, size, 1) * g.view(1, 1, 1, size)
-        
-        window = gaussian_window(window_size).to(pred.device)
-        
-        def _ssim(img1, img2, window):
-            mu1 = nn.functional.conv2d(img1, window, padding=window_size//2, groups=1)
-            mu2 = nn.functional.conv2d(img2, window, padding=window_size//2, groups=1)
-            
-            mu1_sq = mu1.pow(2)
-            mu2_sq = mu2.pow(2)
-            mu1_mu2 = mu1 * mu2
-            
-            sigma1_sq = nn.functional.conv2d(img1 * img1, window, padding=window_size//2, groups=1) - mu1_sq
-            sigma2_sq = nn.functional.conv2d(img2 * img2, window, padding=window_size//2, groups=1) - mu2_sq
-            sigma12 = nn.functional.conv2d(img1 * img2, window, padding=window_size//2, groups=1) - mu1_mu2
-            
-            C1 = 0.01 ** 2
-            C2 = 0.03 ** 2
-            
-            ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
-                      ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-            return ssim_map.mean()
-        
-        return 1 - _ssim(pred, target, window)
-        
-    def gradient_difference_loss(self, pred, target):
-        pred_dx = pred[:, :, :, 1:] - pred[:, :, :, :-1]
-        pred_dy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
-        target_dx = target[:, :, :, 1:] - target[:, :, :, :-1]
-        target_dy = target[:, :, 1:, :] - target[:, :, :-1, :]
-        
-        dx_loss = torch.mean(torch.abs(pred_dx - target_dx))
-        dy_loss = torch.mean(torch.abs(pred_dy - target_dy))
-        
-        return dx_loss + dy_loss
+    def gaussian_window(self, size, sigma=1.5):
+        coords = torch.arange(size, dtype=torch.float32)
+        coords -= size // 2
+        g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+        g = g / g.sum()
+        return g.view(1, 1, size, 1) * g.view(1, 1, 1, size)
     
     def forward(self, pred, target):
         if pred.dim() == 5:
@@ -107,10 +70,26 @@ class CombinedLoss(nn.Module):
             pred = pred.view(b * t, c, h, w)
             target = target.view(b * t, c, h, w)
         
-        ssim_loss = self.ssim_loss(pred, target)
-        gdl_loss = self.gradient_difference_loss(pred, target)
+        window = self.gaussian_window(self.window_size).to(pred.device)
         
-        return self.ssim_weight * ssim_loss + self.gdl_weight * gdl_loss
+        mu1 = nn.functional.conv2d(pred, window, padding=self.window_size//2, groups=1)
+        mu2 = nn.functional.conv2d(target, window, padding=self.window_size//2, groups=1)
+        
+        mu1_sq = mu1.pow(2)
+        mu2_sq = mu2.pow(2)
+        mu1_mu2 = mu1 * mu2
+        
+        sigma1_sq = nn.functional.conv2d(pred * pred, window, padding=self.window_size//2, groups=1) - mu1_sq
+        sigma2_sq = nn.functional.conv2d(target * target, window, padding=self.window_size//2, groups=1) - mu2_sq
+        sigma12 = nn.functional.conv2d(pred * target, window, padding=self.window_size//2, groups=1) - mu1_mu2
+        
+        C1 = 0.01 ** 2
+        C2 = 0.03 ** 2
+        
+        ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / \
+                   ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+        
+        return 1 - ssim_map.mean()
 
 class ModelTrainer:
     def __init__(self, model: nn.Module, config: Dict[str, Any], device: str = None):
@@ -123,7 +102,7 @@ class ModelTrainer:
         self.setup_logging()
         
         self.optimizer = optim.Adam(self.model.parameters(), lr=config['learning_rate'])
-        self.criterion = CombinedLoss(ssim_weight=1.0, gdl_weight=1.0).to(self.device)
+        self.criterion = SSIMLoss().to(self.device)
         
         self.writer = SummaryWriter(
             project_root / f"logs/conv/train/{model.name}_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -310,9 +289,9 @@ class ModelTrainer:
 
 def main():
     config = {
-        'batch_size': 16,
-        'learning_rate': 0.0001,
-        'epochs': 30,
+        'batch_size': 8,
+        'learning_rate': 0.0002,
+        'epochs': 20,
         'scheduler': 'cosine',
         'warmup_epochs': 5,
         'log_interval': 50,
@@ -341,7 +320,7 @@ def main():
     
     model = ConvLSTMPredictor(
         input_channels=1,
-        hidden_channels=128,
+        hidden_channels=64,
         kernel_size=3
     )
     
@@ -350,3 +329,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

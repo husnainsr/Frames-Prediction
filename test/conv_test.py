@@ -34,10 +34,27 @@ class ModelTester:
         # Create all directories
         for directory in [self.test_dir, self.comparison_dir, self.metrics_dir]:
             directory.mkdir(parents=True, exist_ok=True)
+            
+        # Setup logging
+        self.setup_logging()
         
         # Load model
         self.load_model(model_path)
         self.model.eval()
+
+    def setup_logging(self):
+        """Setup logging configuration"""
+        log_file = self.test_dir / f"test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
 
     def load_model(self, model_path: str):
         """Load the trained model and its configuration"""
@@ -45,7 +62,7 @@ class ModelTester:
         
         self.model = ConvLSTMPredictor(
             input_channels=1,
-            hidden_channels=128,
+            hidden_channels=64,
             kernel_size=3
         ).to(self.device)
         
@@ -124,10 +141,19 @@ class ModelTester:
     @torch.no_grad()
     def test(self, test_data_path: str, num_sequences: int = None):
         """Run testing on multiple sequences and save results"""
-        # Create metrics file
-        metrics_path = self.metrics_dir / 'all_metrics.csv'
-        with open(metrics_path, 'w') as metrics_file:
-            metrics_file.write('sequence_name,mse,ssim\n')
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Create metrics files
+        sequence_metrics_path = self.metrics_dir / f'sequence_metrics_{self.model.name}_{timestamp}.csv'
+        overall_metrics_path = self.metrics_dir / f'overall_metrics_{self.model.name}_{timestamp}.csv'
+        
+        # Initialize lists to store all metrics for overall calculation
+        all_mse = []
+        all_ssim = []
+        category_metrics = {}  # To store metrics per category
+        
+        with open(sequence_metrics_path, 'w') as seq_file:
+            seq_file.write('category,video_name,sequence_id,mse,ssim\n')
         
         try:
             with h5py.File(test_data_path, 'r') as f:
@@ -145,56 +171,54 @@ class ModelTester:
                     total_sequences += category_sequences
                 print(f"\nTotal sequences across all categories: {total_sequences}")
                 
-                # Create progress bar
-                pbar = tqdm(total=total_sequences if not num_sequences else min(num_sequences, total_sequences),
-                          desc="Processing sequences")
-                
                 sequence_count = 0
                 
-                # Iterate through categories
                 for category in f.keys():
                     category_group = f[category]
+                    category_metrics[category] = {'mse': [], 'ssim': []}
                     
-                    # Iterate through videos in the category
                     for video_name in category_group.keys():
                         video_data = category_group[video_name]
                         
-                        # Get input and target sequences
                         inputs = torch.FloatTensor(video_data['inputs'][:]).to(self.device)
                         targets = torch.FloatTensor(video_data['outputs'][:]).to(self.device)
                         
-                        # Process each sequence
                         for seq_idx in range(inputs.size(0)):
                             try:
-                                # Generate predictions
                                 input_seq = inputs[seq_idx:seq_idx+1]
                                 target_seq = targets[seq_idx:seq_idx+1]
-                                input_seq = input_seq.permute(0, 1, 4, 2, 3)
+                                
+                                if input_seq.size(2) != 1:
+                                    input_seq = input_seq.permute(0, 1, 4, 2, 3)
+                                    target_seq = target_seq.permute(0, 1, 4, 2, 3)
+                                
                                 predictions = self.model(input_seq, self.config['output_frames'])
                                 
-                                # Convert predictions back to original format
-                                preds_np = predictions.squeeze(0).squeeze(1).cpu().numpy()
-                                targets_np = target_seq.squeeze(0).squeeze(-1).cpu().numpy()
+                                preds_np = predictions.squeeze().cpu().numpy()
+                                targets_np = target_seq.squeeze().cpu().numpy()
                                 
-                                # Calculate metrics
                                 metrics = self.calculate_metrics(preds_np, targets_np)
                                 
-                                # Save metrics to CSV
-                                sequence_name = f"{category}_{video_name}_seq{seq_idx}"
-                                with open(metrics_path, 'a') as metrics_file:
-                                    metrics_file.write(f'{sequence_name},{metrics["mse"]},{metrics["ssim"]}\n')
+                                # Save sequence metrics
+                                with open(sequence_metrics_path, 'a') as seq_file:
+                                    seq_file.write(f'{category},{video_name},seq{seq_idx},{metrics["mse"]},{metrics["ssim"]}\n')
                                 
-                                # Save comparison GIF
-                                gif_path = self.comparison_dir / f"{sequence_name}.gif"
+                                # Store metrics for overall calculation
+                                all_mse.append(metrics["mse"])
+                                all_ssim.append(metrics["ssim"])
+                                category_metrics[category]['mse'].append(metrics["mse"])
+                                category_metrics[category]['ssim'].append(metrics["ssim"])
+                                
+                                # Create comparison GIF
+                                gif_path = self.comparison_dir / f"{self.model.name}_{category}_{video_name}_seq{seq_idx}.gif"
                                 self.create_comparison_gif(preds_np, targets_np, str(gif_path))
                                 
                                 sequence_count += 1
-                                pbar.update(1)
-                                
                                 if num_sequences and sequence_count >= num_sequences:
                                     break
                                     
                             except Exception as e:
+                                self.logger.error(f"Error processing sequence {category}_{video_name}_seq{seq_idx}: {str(e)}")
                                 continue
                         
                         if num_sequences and sequence_count >= num_sequences:
@@ -203,9 +227,28 @@ class ModelTester:
                     if num_sequences and sequence_count >= num_sequences:
                         break
                 
-                pbar.close()
+                # Calculate and save overall metrics
+                with open(overall_metrics_path, 'w') as overall_file:
+                    overall_file.write('metric_type,category,mse,ssim\n')
+                    
+                    # Overall model performance
+                    overall_mse = np.mean(all_mse)
+                    overall_ssim = np.mean(all_ssim)
+                    overall_file.write(f'overall,all,{overall_mse},{overall_ssim}\n')
+                    
+                    # Per-category performance
+                    for category, metrics in category_metrics.items():
+                        cat_mse = np.mean(metrics['mse'])
+                        cat_ssim = np.mean(metrics['ssim'])
+                        overall_file.write(f'category,{category},{cat_mse},{cat_ssim}\n')
                 
+                self.logger.info(f"Testing completed. Processed {sequence_count} sequences.")
+                self.logger.info(f"Overall MSE: {overall_mse:.6f}")
+                self.logger.info(f"Overall SSIM: {overall_ssim:.6f}")
+                self.logger.info(f"Results saved to:\n{sequence_metrics_path}\n{overall_metrics_path}")
+        
         except Exception as e:
+            self.logger.error(f"Error during testing: {str(e)}")
             raise
 
     def calculate_metrics(self, predictions: np.ndarray, targets: np.ndarray) -> Dict[str, float]:
@@ -241,17 +284,13 @@ class ModelTester:
 
 def main():
     # Define paths relative to project root
-    model_path = project_root / "models/ConvLSTMPredictor_best.pth"
+    model_path = project_root / "models/SimpleConvLSTMPredictor_best.pth"
     test_data_path = project_root / "processed_data/test_sequences.h5"
     
-    # Check if model exists
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found at {model_path}")
         
-    # Initialize tester
     tester = ModelTester(str(model_path))
-    
-    # Run testing on all sequences
     tester.test(str(test_data_path))
 
 if __name__ == "__main__":
