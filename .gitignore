@@ -22,6 +22,9 @@ test/results/conv/comparisons/*
 !test/results/conv/comparisons/SimpleConvLSTMPredictor_BodyWeightSquats_v_BodyWeightSquats_g01_c01_seq2.gif
 !test/results/conv/comparisons/SimpleConvLSTMPredictor_PullUps_v_PullUps_g06_c04_seq9.gif
 
+test/results/transformer/comparisons/*
+test/results/transformer
 
+runs/
 
 test/results/conv/*.log
