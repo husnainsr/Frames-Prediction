@@ -28,5 +28,7 @@ test/results/transformer
 test/results/predrnn/comparisons/*
 
 runs/
-
+*.gif
+*.avi
+output/*
 test/results/conv/*.log
