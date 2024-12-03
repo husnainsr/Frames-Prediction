@@ -63,7 +63,7 @@ If you use this code for your research, please cite:
   title = {Video Prediction using Deep Learning Models},
   year = {2024},
   publisher = {GitHub},
-  url = {https://github.com/yourusername/repo}
+  url = {[https://github.com/yourusername/repo](https://github.com/husnainsr/Frames-Generation-using-Convlstm-Transformer-and-PredRNN.git)}
 }
 ```
 
