@@ -25,6 +25,8 @@ test/results/conv/comparisons/*
 test/results/transformer/comparisons/*
 test/results/transformer
 
+test/results/predrnn/comparisons/*
+
 runs/
 
 test/results/conv/*.log
