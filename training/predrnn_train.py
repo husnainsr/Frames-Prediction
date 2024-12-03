@@ -11,9 +11,9 @@ DATA_DIR = BASE_DIR / "processed_data"
 MODEL_DIR = BASE_DIR / "models"
 LOG_DIR = BASE_DIR / "logs"
 
-print(DATA_DIR)
-print(MODEL_DIR)
-print(LOG_DIR)
+#print(DATA_DIR)
+#print(MODEL_DIR)
+#print(LOG_DIR)
 
 # Create necessary directories
 DATA_DIR.mkdir(parents=True, exist_ok=True)
