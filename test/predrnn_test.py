@@ -199,6 +199,7 @@ class PredRNNTester:
                                 targets_np = target_seq.squeeze().cpu().numpy()
                                 
                                 metrics = self.calculate_metrics(preds_np, targets_np)
+                                #print("metrics")
                                 
                                 # Save sequence metrics
                                 with open(sequence_metrics_path, 'a') as seq_file:
