@@ -1,3 +1,4 @@
+PIL==11.0.0
 cv2==4.10.0
 h5py==3.12.1
 json==2.0.9
@@ -11,5 +12,7 @@ scipy==1.14.1
 seaborn==0.13.2
 skimage==0.24.0
 sklearn==1.5.2
+streamlit==1.40.2
 torch==2.5.1+cu124
+torchvision==0.20.1+cu124
 tqdm==4.66.5
